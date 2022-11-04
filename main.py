@@ -18,18 +18,16 @@ def save_checkpoint(epoch, model, optimizer, filename):
         'Epoch': epoch,
         'state_dict': model.state_dict(),
         'optimizer': optimizer.state_dict()
-
         # epcoh
-        # loss 
-    
+        # loss
     }
     
     torch.save(state, filename)
 
 def get_dir_name():
     split_symbol = '~' if os.name == 'nt' else ':'
-    model_name_template = split_symbol.join(['S:{}_batch_size', '{}_layer', '{}_id'])
-    model_name = model_name_template.format(arg.batch_size, arg.layer, arg.id)
+    model_name_template = split_symbol.join(['S:{}_mini_batch', '{}_layer', '{}_id'])
+    model_name = model_name_template.format(arg.mini_batch, arg.layer, arg.id)
     
     dir_name = os.path.join(model_name)
             
@@ -54,8 +52,10 @@ def meanSubtract(dataset):
 
 def get_data(mode):
     # load tranin dataset : CIFAR-10
-    batch_size = arg.batch_size
-   
+    batch_size_train = 45000 / arg.mini_batch  # 351.5 
+    batch_size_valid = 5000  / arg.mini_batch  # 39.06
+    batch_size_test  = 10000 / arg.mini_batch  # 78.125
+    
     if(mode=='train'):
         meanR, meanG, meanB = 0.49139965, 0.48215845, 0.4465309
         stdR, stdG, stdB = 0.20220213, 0.19931543, 0.20086348    
@@ -64,7 +64,13 @@ def get_data(mode):
         meanR, meanG, meanB = 0.4942142, 0.48513138, 0.45040908
         stdR, stdG, stdB = 0.20189482, 0.19902097, 0.20103233    
     
-    transform = transforms.Compose([transforms.ToTensor(),
+    transform_train = transforms.Compose([transforms.ToTensor(),
+                                    transforms.Normalize((meanR, meanG, meanB),
+                                                         (stdR, stdG, stdB)),
+                                    transforms.RandomCrop(32, padding=4),
+                                    transforms.RandomHorizontalFlip()])   
+    
+    transform_test = transforms.Compose([transforms.ToTensor(),
                                     transforms.Normalize((meanR, meanG, meanB),
                                                          (stdR, stdG, stdB))])   
     
@@ -72,22 +78,22 @@ def get_data(mode):
     if(mode=='train'):
         trainset = torchvision.datasets.CIFAR10(root='./data', train=True, 
                                                 download=True,
-                                                transform=transform)
+                                                transform=transform_train)
         
         train, valid = torch.utils.data.random_split(trainset, [45000, 5000])
-        dataloader = torch.utils.data.DataLoader(train, batch_size=batch_size,
+        dataloader = torch.utils.data.DataLoader(train, batch_size = int(batch_size_train),
                                                 shuffle=True,
                                                 )   
         # validation set 
-        validloader = torch.utils.data.DataLoader(valid, batch_size=batch_size, 
+        validloader = torch.utils.data.DataLoader(valid, batch_size = int(batch_size_valid), 
                                                 shuffle=True,
                                                 ) # check batch size 
     # load test datasaet : CIFAR-10
     elif (mode =='test'):
         testset = torchvision.datasets.CIFAR10(root='./data', train=False,
                                             download=True,
-                                            transform=transform)     
-        dataloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
+                                            transform=transform_test)     
+        dataloader = torch.utils.data.DataLoader(testset, batch_size = int(batch_size_test),
                                                 shuffle=False) 
 
     classes = ('plane', 'car', 'bird', 'cat',
@@ -96,10 +102,32 @@ def get_data(mode):
     print("Done with", mode,  "data loading")
     
     if(mode=='train'):
-        return dataloader, validloader, classes, 
+        return dataloader, validloader, classes
+    
     elif (mode =='test'):
         return dataloader, classes
     
+def test_in_train(testloader, save_model):
+
+    test_model = ResNet(arg.layer).to(device)
+
+    # test 
+    correct = 0
+    total = 0
+    
+    # test_model.eval()      # enable for consistant performance 
+    with torch.no_grad():
+        for data in testloader:
+            
+            images, labels = data[0].to(device), data[1].to(device)     # error : declare CUDA
+            
+            outputs= test_model(images)
+            _, predicted = torch.max(outputs.data, 1)                   # top-1 : check paper
+            total+= labels.size(0) 
+            correct += (predicted == labels).sum().item()
+            
+    print(f'Accuracy: {(100 * correct // total):.2f}%, Error : {(100 - (100 * correct // total)):.2f} %')
+
 def train(trainloader, validloader, classes):
     
     model = ResNet(arg.layer).to(device)
@@ -108,13 +136,12 @@ def train(trainloader, validloader, classes):
     
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model.parameters(), lr= arg.lr , weight_decay= 0.0001, momentum=0.9)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=2000)    # 20 epoch
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=50)    # 50 epoch
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
     
     epoch_num = arg.epoch
-    # total training 45000, batch 256, mini batch 45000/256 => 176
-    mini_batch = int(45000 / arg.batch_size) # training data 45000
-    # total validation 5000, batch 256, mini batch 5000/256 => 20
-    mini_batch_val = int(5000 / arg.batch_size) # training data 45000
+    mini_batch = arg.mini_batch
+    mini_batch_val = arg.mini_batch
     
     if(arg.mode == 'resume'):
         model_path = os.path.join('./model/', PATH)
@@ -150,14 +177,21 @@ def train(trainloader, validloader, classes):
         tb_pth_valid = os.path.join('./logs/valid/', PATH)
         if not os.path.isdir(tb_pth_valid):
             os.makedirs(tb_pth_valid)        
-
+        
+        
+    # ================ train ================
+    # 
+    # iteration= epoch x mini-batch 
+    #  
+    # =======================================
     for epoch in range(epoch_num):
-        # train 
         writer = SummaryWriter(tb_pth_train)      # tensorboard 
         running_loss = 0.0
         correct = 0
         total = 0
-        for i, data in enumerate(trainloader, 0):   # starts from index 0 
+        
+        model.train()                               
+        for i, data in enumerate(trainloader, 0):   # from 0 to mini-batch -1
             inputs, labels = data[0].to(device), data[1].to(device)
             
             # zero the parameter gradients
@@ -176,25 +210,25 @@ def train(trainloader, validloader, classes):
             total+= labels.size(0) 
             correct += (predicted == labels).sum().item()
             
-            if i % (mini_batch + 1) == mini_batch:    # print every 176 mini-batches
-                print(f'[{epoch + 1}, {i + 1:5d}], train loss: {running_loss / (mini_batch + 1):.3f},  train accuracy: {(100 * correct // total):.2f}%,' , end=' ')
+            if i % (mini_batch + 1) == mini_batch:    
+                print(f'[{epoch + 1} / {epoch_num}], train loss: {running_loss / (mini_batch + 1):.3f},  train accuracy: {(100 * correct // total):.2f}%,' , end=' ')
                 writer.add_scalar("Loss/train", running_loss / (mini_batch + 1), epoch + 1)
                 writer.add_scalar("Accuracy/train", 100 * correct // total, epoch + 1)
                 running_loss = 0.0
-                
+
+        # scheduler.step(running_loss)                 
         writer.close()
-        
-        
-        # validation 
+
+    # ================ validation ================
         writer = SummaryWriter(tb_pth_valid)      # tensorboard 
         validation_loss = 0.0
         
         correct = 0
         total = 0
        
-        model.eval()                             # check placement 
-        criterion.eval()                         # check placement 
+        # criterion.eval()                             # check placement 
         with torch.no_grad():   
+            # model.eval()                             # check placement : question ?
             for j, val_data in enumerate(validloader, 0):
                 val_inputs, val_labels = val_data[0].to(device), val_data[1].to(device)
                 val_out = model(val_inputs)
@@ -214,13 +248,18 @@ def train(trainloader, validloader, classes):
                     writer.add_scalar("Accuracy/val", 100 * correct // total, epoch + 1)
                     validation_loss = 0.0
                     
-                scheduler.step(validation_loss) 
             writer.close()
         
-        model.train()                           # check placement 
-        criterion.train()                       # check placement 
+        scheduler.step()
+        # scheduler.step(validation_loss) 
+        # criterion.train()                       # check placement 
         
         save_checkpoint(epoch, model, optimizer, file_path) # save per epoch
+        
+        # if (epoch % 50) ==0:
+        #     test_load, classes = get_data('test')
+        #     test_in_train(test_load, model)
+            
         
     print('Finished Training')
     writer.close()
@@ -239,12 +278,12 @@ def test(testloader, save_model):
     checkpoint = torch.load(save_model)
     test_model.load_state_dict(checkpoint['state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer'])
-    # test_model.load_state_dict(torch.load(save_model))
-    
+
     # test 
     correct = 0
     total = 0
     
+    # test_model.eval() # check 
     with torch.no_grad():
         for data in testloader:
             
@@ -278,9 +317,7 @@ def run():
     save_model= train(train_load, valid_load, classes)
     test(test_load, save_model)
 
-
 # save epoch and loss
-# data augmentation
 # paper spec 
 # github
 # save best accuracy model 
