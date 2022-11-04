@@ -109,7 +109,7 @@ def get_data(mode):
     
 def test_in_train(testloader, save_model):
 
-    test_model = ResNet(arg.layer).to(device)
+    # test_model = ResNet(arg.layer).to(device)
 
     # test 
     correct = 0
@@ -121,7 +121,7 @@ def test_in_train(testloader, save_model):
             
             images, labels = data[0].to(device), data[1].to(device)     # error : declare CUDA
             
-            outputs= test_model(images)
+            outputs= save_model(images)
             _, predicted = torch.max(outputs.data, 1)                   # top-1 : check paper
             total+= labels.size(0) 
             correct += (predicted == labels).sum().item()
@@ -256,9 +256,9 @@ def train(trainloader, validloader, classes):
         
         save_checkpoint(epoch, model, optimizer, file_path) # save per epoch
         
-        # if (epoch % 50) ==0:
-        #     test_load, classes = get_data('test')
-        #     test_in_train(test_load, model)
+        if (epoch % 50) ==0:
+            test_load, classes = get_data('test')
+            test_in_train(test_load, model)
             
         
     print('Finished Training')
