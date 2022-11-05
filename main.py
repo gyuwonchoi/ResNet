@@ -52,9 +52,13 @@ def meanSubtract(dataset):
 
 def get_data(mode):
     # load tranin dataset : CIFAR-10
-    batch_size_train = 45000 / arg.mini_batch  # 351.5 
-    batch_size_valid = 5000  / arg.mini_batch  # 39.06
-    batch_size_test  = 10000 / arg.mini_batch  # 78.125
+    # batch_size_train = 45000 / arg.batch_num  # 351.5 
+    # batch_size_valid = 5000  / arg.batch_num  # 39.06
+    # batch_size_test  = 10000 / arg.batch_num  # 78.125
+    
+    batch_size_train = arg.mini_batch  # 128 
+    batch_size_valid = arg.mini_batch  # 128
+    batch_size_test  = arg.mini_batch  # 128
     
     if(mode=='train'):
         meanR, meanG, meanB = 0.49139965, 0.48215845, 0.4465309
@@ -126,22 +130,23 @@ def test_in_train(testloader, save_model):
             total+= labels.size(0) 
             correct += (predicted == labels).sum().item()
             
-    print(f'Accuracy: {(100 * correct // total):.2f}%, Error : {(100 - (100 * correct // total)):.2f} %')
+    print(f'Accuracy: {(100.0 * correct // total):.2f}%, Error : {(100.0 - (100.0 * correct // total)):.2f} %')
 
 def train(trainloader, validloader, classes):
     
     model = ResNet(arg.layer).to(device)
-    # summary(model, (3, 32, 32))
-    # print(summary)
+    summary(model, (3, 32, 32))
+    print(summary)
     
+    lr_ = arg.lr
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model.parameters(), lr= arg.lr , weight_decay= 0.0001, momentum=0.9)
+    optimizer = optim.SGD(model.parameters(), lr= lr_, weight_decay= 0.0001, momentum=0.9)
     # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=50)    # 50 epoch
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
     
     epoch_num = arg.epoch
-    mini_batch = arg.mini_batch
-    mini_batch_val = arg.mini_batch
+    batch_num = int (45000 / arg.mini_batch) 
+    batch_num_val = int (5000 / arg.mini_batch)
     
     if(arg.mode == 'resume'):
         model_path = os.path.join('./model/', PATH)
@@ -187,11 +192,19 @@ def train(trainloader, validloader, classes):
     for epoch in range(epoch_num):
         writer = SummaryWriter(tb_pth_train)      # tensorboard 
         running_loss = 0.0
-        correct = 0
-        total = 0
+        correct = 0.0
+        total = 0.0
+        
+        if(epoch == 250):
+            lr_ = 0.01
+        elif(epoch == 375):
+            lr_ = 0.001
+        
+        # add to test lr reduction
+        optimizer = optim.SGD(model.parameters(), lr= lr_, weight_decay= 0.0001, momentum=0.9)
         
         model.train()                               
-        for i, data in enumerate(trainloader, 0):   # from 0 to mini-batch -1
+        for i, data in enumerate(trainloader, 0):   # 45000 / 128
             inputs, labels = data[0].to(device), data[1].to(device)
             
             # zero the parameter gradients
@@ -210,10 +223,10 @@ def train(trainloader, validloader, classes):
             total+= labels.size(0) 
             correct += (predicted == labels).sum().item()
             
-            if i % (mini_batch + 1) == mini_batch:    
-                print(f'[{epoch + 1} / {epoch_num}], train loss: {running_loss / (mini_batch + 1):.3f},  train accuracy: {(100 * correct // total):.2f}%,' , end=' ')
-                writer.add_scalar("Loss/train", running_loss / (mini_batch + 1), epoch + 1)
-                writer.add_scalar("Accuracy/train", 100 * correct // total, epoch + 1)
+            if i % (batch_num + 1) == batch_num:    
+                print(f'[{epoch + 1} / {epoch_num}], train loss: {running_loss / (batch_num + 1.0):.3f},  train accuracy: {(100 * correct // total):.2f}%,' , end=' ')
+                writer.add_scalar("Loss/train", running_loss / (batch_num + 1.0), epoch + 1)
+                writer.add_scalar("Accuracy/train", 100.0 * correct // total, epoch + 1)
                 running_loss = 0.0
 
         # scheduler.step(running_loss)                 
@@ -223,8 +236,8 @@ def train(trainloader, validloader, classes):
         writer = SummaryWriter(tb_pth_valid)      # tensorboard 
         validation_loss = 0.0
         
-        correct = 0
-        total = 0
+        correct = 0.0
+        total = 0.0
        
         # criterion.eval()                             # check placement 
         with torch.no_grad():   
@@ -241,16 +254,16 @@ def train(trainloader, validloader, classes):
                 total+= val_labels.size(0) 
                 correct += (predicted == val_labels).sum().item()               
                 
-                if j % (mini_batch_val + 1) == mini_batch_val:    # print every 20 mini-batches
-                    print(f' val loss: {validation_loss / (mini_batch_val + 1):.3f}, valid accuracy: {(100 * correct // total):.2f}%, lr: {optimizer.param_groups[0]["lr"]:.6f}')
+                if j % (batch_num_val + 1) == batch_num_val:    # print every 20 mini-batches
+                    print(f' val loss: {validation_loss / (batch_num_val + 1):.3f}, valid accuracy: {(100 * correct // total):.2f}%, lr: {optimizer.param_groups[0]["lr"]:.6f}')
                     writer.add_scalar("LearningRate", optimizer.param_groups[0]["lr"], epoch + 1)
-                    writer.add_scalar("Loss/val", validation_loss / (mini_batch_val + 1), epoch + 1)
-                    writer.add_scalar("Accuracy/val", 100 * correct // total, epoch + 1)
+                    writer.add_scalar("Loss/val", validation_loss / (batch_num_val + 1.0), epoch + 1)
+                    writer.add_scalar("Accuracy/val", 100.0 * correct // total, epoch + 1)
                     validation_loss = 0.0
                     
             writer.close()
         
-        scheduler.step()
+        # scheduler.step()
         # scheduler.step(validation_loss) 
         # criterion.train()                       # check placement 
         
