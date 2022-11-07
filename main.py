@@ -30,9 +30,7 @@ def get_dir_name():
     model_name = model_name_template.format(arg.mini_batch, arg.layer, arg.id)
     
     dir_name = os.path.join(model_name)
-            
-    # print(dir_name)
-
+    
     return dir_name 
 
 
@@ -103,8 +101,6 @@ def get_data(mode):
     classes = ('plane', 'car', 'bird', 'cat',
             'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
     
-    # print("Done with", mode,  "data loading")
-    
     if(mode=='train'):
         return dataloader, validloader, classes
     
@@ -135,8 +131,44 @@ def test_in_train(testloader, save_model, epoch, tb_pth_test):
     if (epoch % 50 ==0):
         print('Accuracy: ', 100.0 * correct / total, '%, Error : ', 100.0 - (100.0 * correct / total), '%')
     writer.close()
+    
+def validate(model_, validloader, tb_pth_valid, epoch, batch_num_val):
+    writer = SummaryWriter(tb_pth_valid)           # tensorboard 
+    
+    model = ResNet(arg.layer).to(device)
+    model = model_
+    optimizer = optim.SGD(model.parameters(), lr= arg.lr , weight_decay= 0.0001, momentum=0.9)
+    criterion = nn.CrossEntropyLoss()
+    
+    validation_loss = 0.0    
+    correct = 0.0
+    total = 0.0
+       
+    with torch.no_grad():   
+        # model.eval()                             
+        for j, val_data in enumerate(validloader, 0):
+            val_inputs, val_labels = val_data[0].to(device), val_data[1].to(device)
+            val_out = model(val_inputs)
+            
+            val_loss = criterion(val_out, val_labels)
+            validation_loss += val_loss.item()
+            
+            # validation accuracy 
+            _, predicted = torch.max(val_out.data, 1) 
+            total+= val_labels.size(0) 
+            correct += (predicted == val_labels).sum().item()               
+            
+            if j % (batch_num_val + 1) == batch_num_val:    
+                print(f' val loss: {validation_loss / (batch_num_val + 1):.3f}, valid accuracy: {(100.0 * correct / total):.2f}%, lr: {optimizer.param_groups[0]["lr"]:.6f}')
+                writer.add_scalar("LearningRate", optimizer.param_groups[0]["lr"], epoch + 1)
+                writer.add_scalar("Loss/val", validation_loss / (batch_num_val + 1.0), epoch + 1)
+                writer.add_scalar("Accuracy/val", 100.0 * correct / total, epoch + 1)
+                writer.add_scalar("Error/val", 100.0 - 100.0 * correct / total, epoch + 1)
+                validation_loss = 0.0
+                
+        writer.close()
 
-def train(trainloader, validloader, classes):
+def train(trainloader, validloader, classes, test_load):
     
     model = ResNet(arg.layer).to(device)
     summary(model, (3, 32, 32))
@@ -237,40 +269,39 @@ def train(trainloader, validloader, classes):
         # scheduler.step(running_loss)                 
         writer.close()
 
+        validate(model, validloader, tb_pth_valid, epoch, batch_num_val)
     # ================ validation ================
-        writer = SummaryWriter(tb_pth_valid)           # tensorboard 
-        validation_loss = 0.0
+        # writer = SummaryWriter(tb_pth_valid)           # tensorboard 
+        # validation_loss = 0.0
         
-        correct = 0.0
-        total = 0.0
+        # correct = 0.0
+        # total = 0.0
        
-        with torch.no_grad():   
-            # model.eval()                             
-            for j, val_data in enumerate(validloader, 0):
-                val_inputs, val_labels = val_data[0].to(device), val_data[1].to(device)
-                val_out = model(val_inputs)
+        # with torch.no_grad():   
+        #     # model.eval()                             
+        #     for j, val_data in enumerate(validloader, 0):
+        #         val_inputs, val_labels = val_data[0].to(device), val_data[1].to(device)
+        #         val_out = model(val_inputs)
                 
-                val_loss = criterion(val_out, val_labels)
-                validation_loss += val_loss.item()
+        #         val_loss = criterion(val_out, val_labels)
+        #         validation_loss += val_loss.item()
                 
-                # validation accuracy 
-                _, predicted = torch.max(val_out.data, 1) 
-                total+= val_labels.size(0) 
-                correct += (predicted == val_labels).sum().item()               
+        #         # validation accuracy 
+        #         _, predicted = torch.max(val_out.data, 1) 
+        #         total+= val_labels.size(0) 
+        #         correct += (predicted == val_labels).sum().item()               
                 
-                if j % (batch_num_val + 1) == batch_num_val:    
-                    print(f' val loss: {validation_loss / (batch_num_val + 1):.3f}, valid accuracy: {(100.0 * correct / total):.2f}%, lr: {optimizer.param_groups[0]["lr"]:.6f}')
-                    writer.add_scalar("LearningRate", optimizer.param_groups[0]["lr"], epoch + 1)
-                    writer.add_scalar("Loss/val", validation_loss / (batch_num_val + 1.0), epoch + 1)
-                    writer.add_scalar("Accuracy/val", 100.0 * correct / total, epoch + 1)
-                    writer.add_scalar("Error/val", 100.0 - 100.0 * correct / total, epoch + 1)
-                    validation_loss = 0.0
+        #         if j % (batch_num_val + 1) == batch_num_val:    
+        #             print(f' val loss: {validation_loss / (batch_num_val + 1):.3f}, valid accuracy: {(100.0 * correct / total):.2f}%, lr: {optimizer.param_groups[0]["lr"]:.6f}')
+        #             writer.add_scalar("LearningRate", optimizer.param_groups[0]["lr"], epoch + 1)
+        #             writer.add_scalar("Loss/val", validation_loss / (batch_num_val + 1.0), epoch + 1)
+        #             writer.add_scalar("Accuracy/val", 100.0 * correct / total, epoch + 1)
+        #             writer.add_scalar("Error/val", 100.0 - 100.0 * correct / total, epoch + 1)
+        #             validation_loss = 0.0
                     
-            writer.close()
+        #     writer.close()
         
         save_checkpoint(epoch, model, optimizer, file_path) # save per epoch
-        
-        test_load, classes = get_data('test')
         test_in_train(test_load, model, epoch, tb_pth_test)
             
         
@@ -282,9 +313,6 @@ def train(trainloader, validloader, classes):
 def test(testloader, save_model):
     print("Start the test!")
     
-    # tensorboard 
-    # writer = SummaryWriter('./logs/test')
-
     test_model = ResNet(arg.layer).to(device)
     optimizer = optim.SGD(test_model.parameters(), lr= arg.lr , weight_decay= 0.0001, momentum=0.9)
     
@@ -296,7 +324,6 @@ def test(testloader, save_model):
     correct = 0
     total = 0
     
-    # test_model.eval() # check 
     with torch.no_grad():
         for data in testloader:
             
@@ -309,9 +336,7 @@ def test(testloader, save_model):
             
     print('Accuracy of the network :', 100.0 * correct / total, '%')
     print('Error of the network :', 100.0 - 100.0 * correct / total, '%')
-    # print(f'Error of the network : {(100.0 - (100.0 * correct / total)):.2f} %')
-    
-    # writer.close()
+
 
 def run(): 
     # parse the arguments
@@ -328,16 +353,11 @@ def run():
     
     PATH = get_dir_name()
     
-    save_model= train(train_load, valid_load, classes)
+    save_model= train(train_load, valid_load, classes, test_load)
     test(test_load, save_model)
 
     # test(test_load, './model/S:128_mini_batch:20_layer:7_id/ResNet.pth')
     
-# save epoch and loss
-# paper spec 
-# github
-# save best accuracy model 
-
 def main():
     run()
 
