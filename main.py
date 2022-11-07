@@ -270,37 +270,6 @@ def train(trainloader, validloader, classes, test_load):
         writer.close()
 
         validate(model, validloader, tb_pth_valid, epoch, batch_num_val)
-    # ================ validation ================
-        # writer = SummaryWriter(tb_pth_valid)           # tensorboard 
-        # validation_loss = 0.0
-        
-        # correct = 0.0
-        # total = 0.0
-       
-        # with torch.no_grad():   
-        #     # model.eval()                             
-        #     for j, val_data in enumerate(validloader, 0):
-        #         val_inputs, val_labels = val_data[0].to(device), val_data[1].to(device)
-        #         val_out = model(val_inputs)
-                
-        #         val_loss = criterion(val_out, val_labels)
-        #         validation_loss += val_loss.item()
-                
-        #         # validation accuracy 
-        #         _, predicted = torch.max(val_out.data, 1) 
-        #         total+= val_labels.size(0) 
-        #         correct += (predicted == val_labels).sum().item()               
-                
-        #         if j % (batch_num_val + 1) == batch_num_val:    
-        #             print(f' val loss: {validation_loss / (batch_num_val + 1):.3f}, valid accuracy: {(100.0 * correct / total):.2f}%, lr: {optimizer.param_groups[0]["lr"]:.6f}')
-        #             writer.add_scalar("LearningRate", optimizer.param_groups[0]["lr"], epoch + 1)
-        #             writer.add_scalar("Loss/val", validation_loss / (batch_num_val + 1.0), epoch + 1)
-        #             writer.add_scalar("Accuracy/val", 100.0 * correct / total, epoch + 1)
-        #             writer.add_scalar("Error/val", 100.0 - 100.0 * correct / total, epoch + 1)
-        #             validation_loss = 0.0
-                    
-        #     writer.close()
-        
         save_checkpoint(epoch, model, optimizer, file_path) # save per epoch
         test_in_train(test_load, model, epoch, tb_pth_test)
             
