@@ -45,7 +45,6 @@ class ResNet(nn.Module):
         
         # conv2~4 block
         for block in range(3):     
-            # optimize here 
             if block == 0:                      # block 0
                 f = self.conv2_1
                 f2 = self.conv2_2
@@ -64,33 +63,44 @@ class ResNet(nn.Module):
                 f = self.conv4_1
                 bn = self.bn4
              
+            # layers 
             for i in range(self.n):
                 shortcut = x
-                if(i != (self.n -1)):
+                if(i != (self.n -1)):           # except last pair
                     for j in range(2):
                         x = f(x)
                         
-                        if j==0:
-                            x = self.relu(bn(x))
-                        else:  
-                            x = bn(x)
-                    x = shortcut + x
-                    x = self.relu(bn(x))
+                        if j==1:                # second layer of a pair 
+                            x = bn(x)            
+                            x = shortcut + x
+                            
+                        x = self.relu(bn(x))
                
-                else:
-                    shortcut = x
+                else:                               # last pair of block 
+                    # shortcut = x
                     
                     x = f(x)
-                    x = self.relu(bn(x))     
+                    x = self.relu(bn(x))            # first layer of pair 
                     
+                    # if(block!=2):                         
+                    #     x = bn2(f2(x))              # subsampling 
+ 
+                    #     shortcut = short(shortcut)  # identity mapping             
+                    #     x = self.relu(shortcut + x)
+                        
+                        
                     if(block!=2): 
-                        shortcut = short(shortcut)
-                        
-                        x = bn2(f2(x))               # subsampling 
-                        # print(x.shape)
-                        
-                        x = self.relu(shortcut + x)
-                        # print((shortcut + x).shape)
+                    #   x = f(x)
+                    #   x = self.relu(bn(x))        # first layer of pair 
+                    
+                      x = bn2(f2(x))              # subsampling 
+                      shortcut = short(shortcut)  # identity mapping             
+                      x = self.relu(shortcut + x)
+                    
+                    else:                         # last layer of block 2 
+                      x = bn(f(x))
+                      x = shortcut + x
+                      x = self.relu(x)
         
         # conv5 block 
         x = self.avgpool(x)
